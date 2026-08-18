@@ -1,0 +1,63 @@
+services:
+  metastore-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: metastore
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: hive
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hive"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  hive-metastore:
+    image: naushadh/hive-metastore
+    ports:
+      - "9083:9083"
+    environment:
+      DATABASE_HOST: metastore-db
+      DATABASE_DB: metastore
+      DATABASE_USER: hive
+      DATABASE_PASSWORD: hive
+      S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: password
+      S3_BUCKET: warehouse
+      S3_PREFIX: ""
+    depends_on:
+      metastore-db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    restart: always
+
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: password
+    command: server /data --console-address ":9001"
+
+  trino:
+    image: trinodb/trino:latest
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./catalog:/etc/trino/catalog
+    depends_on:
+      - hive-metastore
+      - postgres
+
+  postgres:
+    image: postgres:15
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: shopdb
